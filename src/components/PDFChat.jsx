@@ -227,7 +227,6 @@ const PDFChat = () => {
                 {/* Debug Info (Optional) */}
                 <div className="text-xs text-gray-400 mt-1">
                     <p>Listening: {listening ? 'Yes' : 'No'}</p>
-                    <p>Transcript: {transcript}</p>
                 </div>
             </div>
 
