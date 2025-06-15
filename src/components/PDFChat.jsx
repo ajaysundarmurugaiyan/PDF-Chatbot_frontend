@@ -26,6 +26,18 @@ const PDFChat = () => {
         }
     }, [transcript]);
 
+    useEffect(() => {
+        if (!browserSupportsSpeechRecognition) {
+            alert("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+        }
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => {
+            alert("Microphone access denied. Please allow mic access in your browser settings.");
+        });
+    }, []);
+
+    const getCurrentPDFKey = () => file ? `pdfqa_${file.name}` : null;
+
     const handleFileUpload = async (event) => {
         const uploadedFile = event.target.files[0];
         if (!uploadedFile) return;
@@ -37,7 +49,6 @@ const PDFChat = () => {
             setDocumentId(response.document_id);
             setUploadStatus('success');
 
-            // Load Q&A history for this PDF from localStorage
             const pdfKey = `pdfqa_${uploadedFile.name}`;
             const storedHistory = localStorage.getItem(pdfKey);
             if (storedHistory) {
@@ -49,12 +60,12 @@ const PDFChat = () => {
                 setSelectedIndex(null);
             }
             setQuestion('');
-            setLoading(false); // <-- Always set loading false on success
         } catch (error) {
             console.error('Error uploading file:', error);
             setUploadStatus('error');
-            alert('Please upload a PDF file');
-            setLoading(false); // <-- Always set loading false on error
+            alert('Please upload a valid PDF file.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -71,26 +82,38 @@ const PDFChat = () => {
             };
             const updatedHistory = [...history, newEntry];
             setHistory(updatedHistory);
-            setSelectedIndex(updatedHistory.length - 1); // select the latest
+            setSelectedIndex(updatedHistory.length - 1);
             setQuestion('');
             resetTranscript();
-            // Store updated history in localStorage for this PDF
+
             const pdfKey = getCurrentPDFKey();
             if (pdfKey) {
                 localStorage.setItem(pdfKey, JSON.stringify(updatedHistory));
             }
         } catch (error) {
             console.error('Error getting answer:', error);
+            alert("Failed to get answer. Try again.");
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const toggleListening = () => {
-        if (listening) {
-            SpeechRecognition.stopListening();
-        } else {
-            resetTranscript();
-            SpeechRecognition.startListening({ continuous: true });
+        if (!browserSupportsSpeechRecognition) {
+            alert("Speech recognition is not supported in your browser.");
+            return;
+        }
+
+        try {
+            if (listening) {
+                SpeechRecognition.stopListening();
+            } else {
+                resetTranscript();
+                SpeechRecognition.startListening({ continuous: true });
+            }
+        } catch (err) {
+            console.error("Speech recognition error:", err);
+            alert("Speech recognition failed. Check mic permissions.");
         }
     };
 
@@ -102,87 +125,75 @@ const PDFChat = () => {
                     <h2 className="text-xl md:text-2xl font-bold mb-3 md:mb-4">PDF Chat</h2>
                     <div className="flex flex-col items-center space-y-3 md:space-y-4">
                         <div className='flex items-center space-x-2 md:space-x-4'>
-                        <div className="w-12 h-12 md:w-16 md:h-16 bg-black rounded-full flex items-center justify-center border-4 border-[#00BFFF]">
-                            <FaFileUpload className="w-7 h-7 md:w-10 md:h-10 text-[#00BFFF]" />
-                        </div>
-                        <input
-                            type="file"
-                            accept=".pdf"
-                            onChange={handleFileUpload}
-                            ref={fileInputRef}
-                            className="hidden"
-                        />
-                        <button
-                            onClick={() => fileInputRef.current.click()}
-                            className="bg-[#00BFFF] text-black px-3 md:px-6 py-2 md:py-3 rounded-lg hover:bg-[#33CCFF] transition-colors font-bold border-2 border-[#00BFFF] text-sm md:text-base"
-                        >
-                            Upload PDF
-                        </button>
+                            <div className="w-12 h-12 md:w-16 md:h-16 bg-black rounded-full flex items-center justify-center border-4 border-[#00BFFF]">
+                                <FaFileUpload className="w-7 h-7 md:w-10 md:h-10 text-[#00BFFF]" />
+                            </div>
+                            <input
+                                type="file"
+                                accept=".pdf"
+                                onChange={handleFileUpload}
+                                ref={fileInputRef}
+                                className="hidden"
+                            />
+                            <button
+                                onClick={() => fileInputRef.current.click()}
+                                className="bg-[#00BFFF] text-black px-3 md:px-6 py-2 md:py-3 rounded-lg hover:bg-[#33CCFF] transition-colors font-bold border-2 border-[#00BFFF] text-sm md:text-base"
+                            >
+                                Upload PDF
+                            </button>
                         </div>
                         {file && (
                             <div className="text-white">
-                                <span className="text-xs md:text-sm block">
-                                    {file.name}
-                                </span>
-                                {uploadStatus === 'uploading' && (
-                                    <span className="text-blue-500">Uploading...</span>
-                                )}
-                                {uploadStatus === 'success' && (
-                                    <span className="text-green-500">Upload successful!</span>
-                                )}
-                                {uploadStatus === 'error' && (
-                                    <span className="text-red-500">Upload failed. Please try again.</span>
-                                )}
+                                <span className="text-xs md:text-sm block">{file.name}</span>
+                                {uploadStatus === 'uploading' && <span className="text-blue-500">Uploading...</span>}
+                                {uploadStatus === 'success' && <span className="text-green-500">Upload successful!</span>}
+                                {uploadStatus === 'error' && <span className="text-red-500">Upload failed. Please try again.</span>}
                             </div>
                         )}
                     </div>
-                    <div className="h-3 md:h-6" /> {/* Add space below upload button */}
+                    <div className="h-3 md:h-6" />
                 </div>
 
-                {/* Q&A History - scrollable, fills the area between upload and input */}
+                {/* Q&A History */}
                 <div className="flex-1 overflow-y-auto mb-2 md:mb-4 bg-[#111] rounded-lg shadow-inner p-1 md:p-2 border border-[#00BFFF] min-h-[120px] max-h-[30vh] md:max-h-full">
-                  {history.length > 0 ? history.map((item, idx) => (
-                    <div key={idx} className={`flex items-center mb-1 rounded border-2 transition-colors ${selectedIndex === idx ? 'bg-[#00BFFF] text-black border-[#00BFFF]' : 'bg-black text-white border-[#00BFFF]'} hover:bg-[#33CCFF] hover:text-black`}> 
-                      <button
-                        onClick={() => setSelectedIndex(idx)}
-                        type="button"
-                        className="flex-1 text-left px-2 md:px-3 py-1 md:py-2 font-medium focus:outline-none bg-transparent text-xs md:text-base"
-                        style={{ background: 'none' }}
-                      >
-                        {item.question}
-                      </button>
-                      <button
-                        onClick={() => {
-                          const updated = history.filter((_, i) => i !== idx);
-                          setHistory(updated);
-                          const pdfKey = `pdfqa_${file.name}`;
-                          if (pdfKey) {
-                            localStorage.setItem(pdfKey, JSON.stringify(updated));
-                          }
-                          setSelectedIndex(prev => {
-                            if (prev === idx) {
-                              if (updated.length === 0) return null;
-                              if (idx === 0) return 0;
-                              return idx - 1;
-                            } else if (prev > idx) {
-                              return prev - 1;
-                            }
-                            return prev;
-                          });
-                        }}
-                        className="px-2 py-2 text-red-500 hover:text-red-600 focus:outline-none bg-transparent"
-                        style={{ background: 'none' }}
-                        title="Delete question"
-                      >
-                        <FaTrash />
-                      </button>
-                    </div>
-                  )) : (
-                    <div className="text-gray-400 text-xs md:text-sm">No questions asked yet.</div>
-                  )}
+                    {history.length > 0 ? history.map((item, idx) => (
+                        <div key={idx} className={`flex items-center mb-1 rounded border-2 transition-colors ${selectedIndex === idx ? 'bg-[#00BFFF] text-black border-[#00BFFF]' : 'bg-black text-white border-[#00BFFF]'} hover:bg-[#33CCFF] hover:text-black`}>
+                            <button
+                                onClick={() => setSelectedIndex(idx)}
+                                type="button"
+                                className="flex-1 text-left px-2 md:px-3 py-1 md:py-2 font-medium focus:outline-none bg-transparent text-xs md:text-base"
+                            >
+                                {item.question}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const updated = history.filter((_, i) => i !== idx);
+                                    setHistory(updated);
+                                    const pdfKey = `pdfqa_${file.name}`;
+                                    if (pdfKey) {
+                                        localStorage.setItem(pdfKey, JSON.stringify(updated));
+                                    }
+                                    setSelectedIndex(prev => {
+                                        if (prev === idx) {
+                                            return updated.length === 0 ? null : Math.max(0, idx - 1);
+                                        } else if (prev > idx) {
+                                            return prev - 1;
+                                        }
+                                        return prev;
+                                    });
+                                }}
+                                className="px-2 py-2 text-red-500 hover:text-red-600 focus:outline-none bg-transparent"
+                                title="Delete question"
+                            >
+                                <FaTrash />
+                            </button>
+                        </div>
+                    )) : (
+                        <div className="text-gray-400 text-xs md:text-sm">No questions asked yet.</div>
+                    )}
                 </div>
 
-                {/* Question input at the bottom */}
+                {/* Question input */}
                 <form onSubmit={handleQuestionSubmit} className="flex space-x-2 sticky bottom-0 bg-black pt-2 pb-2 z-10">
                     <div className="flex-1 relative">
                         <input
@@ -212,41 +223,47 @@ const PDFChat = () => {
                         {loading ? 'Asking...' : 'Ask'}
                     </button>
                 </form>
+
+                {/* Debug Info (Optional) */}
+                <div className="text-xs text-gray-400 mt-1">
+                    <p>Listening: {listening ? 'Yes' : 'No'}</p>
+                    <p>Transcript: {transcript}</p>
+                </div>
             </div>
 
-            {/* Right Panel - AI Response */}
+            {/* Right Panel */}
             <div className="w-full md:w-1/2 p-2 md:p-6 bg-black text-white min-h-[40vh] max-h-[60vh] md:min-h-[50vh] md:max-h-full overflow-y-auto">
                 <h2 className="text-xl md:text-2xl font-bold mb-3 md:mb-4">AI Response</h2>
                 <div className="space-y-4">
-                  {history[selectedIndex] ? (
-                    <div className="bg-[#111] rounded-lg p-2 md:p-4 border border-[#00BFFF] break-words overflow-x-auto max-w-full">
-                      <div className="mb-2">
-                        <span className="font-bold text-base md:text-lg text-[#00BFFF] break-words">{history[selectedIndex].question}?</span>
-                      </div>
-                      <h3 className="font-semibold mb-2 text-[#00BFFF] text-sm md:text-base">Answer:</h3>
-                      <p className="text-white mb-4 text-xs md:text-base break-words whitespace-pre-line" style={{wordBreak:'break-word'}}>{history[selectedIndex].answer}</p>
-                      {history[selectedIndex].sources && history[selectedIndex].sources.length > 0 && (
-                        <>
-                          <h4 className="font-semibold mb-2 text-[#00BFFF] text-sm md:text-base">Sources:</h4>
-                          <div className="space-y-2">
-                            {history[selectedIndex].sources.map((source, index) => (
-                              <div key={index} className="p-2 md:p-3 bg-black rounded border border-[#00BFFF] break-words overflow-x-auto max-w-full">
-                                <p className="text-sm md:text-base text-white break-words whitespace-pre-line" style={{wordBreak:'break-word'}}>{source}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-400">
-                      <p>Ask a question to see the AI response here</p>
-                    </div>
-                  )}
+                    {history[selectedIndex] ? (
+                        <div className="bg-[#111] rounded-lg p-2 md:p-4 border border-[#00BFFF] break-words overflow-x-auto max-w-full">
+                            <div className="mb-2">
+                                <span className="font-bold text-base md:text-lg text-[#00BFFF] break-words">{history[selectedIndex].question}?</span>
+                            </div>
+                            <h3 className="font-semibold mb-2 text-[#00BFFF] text-sm md:text-base">Answer:</h3>
+                            <p className="text-white mb-4 text-xs md:text-base break-words whitespace-pre-line" style={{ wordBreak: 'break-word' }}>{history[selectedIndex].answer}</p>
+                            {history[selectedIndex].sources && history[selectedIndex].sources.length > 0 && (
+                                <>
+                                    <h4 className="font-semibold mb-2 text-[#00BFFF] text-sm md:text-base">Sources:</h4>
+                                    <div className="space-y-2">
+                                        {history[selectedIndex].sources.map((source, index) => (
+                                            <div key={index} className="p-2 md:p-3 bg-black rounded border border-[#00BFFF] break-words overflow-x-auto max-w-full">
+                                                <p className="text-sm md:text-base text-white break-words whitespace-pre-line" style={{ wordBreak: 'break-word' }}>{source}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-gray-400">
+                            <p>Ask a question to see the AI response here</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
 };
 
-export default PDFChat; 
+export default PDFChat;
